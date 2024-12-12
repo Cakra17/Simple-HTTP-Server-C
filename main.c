@@ -12,97 +12,85 @@
 int main(void)
 {
   int server_fd, client_addr_len;
-  struct sockaddr_in client_addr;
   char buffer[BUFFER_SIZE];
 
+  // Create server file descriptor
   server_fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (server_fd != 0)
-  {
+  if (server_fd == -1) {
     printf("Socket creation failed: %s\n", strerror(errno));
-    return 1;
+    exit(EXIT_FAILURE);
   }
 
   struct sockaddr_in server_addr = {
-      .sin_family = AF_INET,
-      .sin_port = htons(PORT),
-      .sin_addr = {htonl(INADDR_ANY)}};
+    .sin_family = AF_INET,
+    .sin_port = htons(PORT),
+    .sin_addr = { htonl(INADDR_ANY) }
+  };
 
-  if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) != 0)
-  {
+  if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
     printf("Bind failed: %s\n", strerror(errno));
-    return 1;
+    exit(EXIT_FAILURE);
   }
 
   int connection_backlog = 5;
-  if (listen(server_fd, connection_backlog) != 0)
-  {
+  if (listen(server_fd, connection_backlog) < 0) {
     printf("Listen failed: %s\n", strerror(errno));
-    return 1;
+    exit(EXIT_FAILURE);
   }
+
+  int addrlen = sizeof(server_addr);
 
   printf("Server listening on port %d\n", PORT);
 
-  while (1)
-  {
-    client_addr_len = sizeof(client_addr);
 
-    int fd = accept(server_fd, (struct sockaddr *)&server_addr, &client_addr_len);
-    if (fd == -1)
-    {
-      printf("Accept failed: %s\n", strerror(errno));
-      return 1;
+  while (1) {
+    int fd = accept(server_fd, (struct sockaddr *)&server_addr, (socklen_t *)&addrlen);
+    if (fd < 0) {
+      printf("Failed to accept connection: %s\n", strerror(errno));
+      exit(EXIT_FAILURE);
     }
 
-    printf("Client connected!!!\n");
-
-    ssize_t bytes_read = read(server_fd, buffer, BUFFER_SIZE);
-    if (bytes_read == -1)
-    {
-      printf("Read failed: %s\n", strerror(errno));
+    ssize_t bytes_read = read(fd, buffer, BUFFER_SIZE);
+    if (bytes_read < 0) {
+      printf("Failed to read request: %s\n", strerror(errno));
       close(fd);
-      return 1;
+      exit(EXIT_FAILURE);
     }
 
     buffer[bytes_read] = '\0';
-
     printf("Received request: \n%s\n", buffer);
+    // extract request
+    char *request_line = strtok(buffer, "\r\n");
+    char *host_line = strtok(NULL, "\r\n");
+    char *user_agent_line = strtok(NULL, "\r\n");
 
-    char *request = strtok(buffer, "\r\n");
-    if (!request)
-    {
-      printf("Failed to parsed request");
-      return 1;
+    // extract method, url path, http version
+    char *method = strtok(request_line, " ");
+    char *url_path = strtok(NULL, " "); 
+    char *http_ver = strtok(NULL, " ");
+
+
+    // extract host
+    char *host = strtok(host_line, " ");
+    host = strtok(NULL, " ");
+    printf("Host: %s\n", host);
+
+    // extract user agent
+    char *user_agent = strtok(user_agent_line, " ");
+    user_agent = strtok(NULL, " ");
+    printf("User-Agent: %s\n", user_agent);
+
+    char *response;
+
+    if (strcmp(url_path, "/") == 0) {
+      response = "HTTP/1.1 200 OK\r\n\r\n";
+    } else {
+      response = "HTTP/1.1 404 Not Found\r\n\r\n";
     }
-
-    char *method = strtok(request, " ");
-    if (!method)
-    {
-      printf("Failed to parsed method");
-      return 1;
-    }
-
-    char *url_path = strtok(NULL, " ");
-    if (!url_path)
-    {
-      printf("Failed to parsed url path");
-      return 1;
-    }
-
-    char *reply;
-
-    if (strcmp(url_path, "/") == 0)
-    {
-      reply = "HTTP/1.1 200 OK\r\n\r\n";
-    }
-    else
-    {
-      reply = "HTTP/1.1 404 Not Found\r\n\r\n";
-    }
-
-    send(fd, reply, strlen(reply), 0);
     
+    write(fd, response, strlen(response));
+
     close(fd);
   }
-
   return 0;
 }
